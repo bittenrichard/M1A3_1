@@ -192,6 +192,7 @@ app.post('/api/google/calendar/create-event', async (req: Request, res: Response
     } catch (error: any) { res.status(500).json({ success: false, message: error.message }); }
 });
 
+
 // =================================================================
 // Inicialização do Servidor
 // =================================================================
