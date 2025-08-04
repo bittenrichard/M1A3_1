@@ -1,31 +1,40 @@
-# Estágio 1: Build da aplicação
+# Estágio 1: Builder - Instala dependências, compila o código e remove dependências de dev.
 FROM node:20-alpine AS builder
 
+# Define o diretório de trabalho
 WORKDIR /usr/src/app
 
-# Copia os arquivos de dependência e instala apenas as de produção
+# Copia os arquivos de definição de pacotes
 COPY package*.json ./
-RUN npm install --omit=dev
 
-# Copia todo o resto do código-fonte
+# **CORREÇÃO 1: Instala TODAS as dependências, incluindo devDependencies**
+# Isso garante que o TypeScript (tsc) estará disponível.
+RUN npm install
+
+# Copia todo o código-fonte do projeto para o contêiner
 COPY . .
 
-# Compila o TypeScript para JavaScript
+# **CORREÇÃO 2: Compila o TypeScript para JavaScript**
+# Este passo agora funcionará, pois o tsc foi instalado.
 RUN npm run build:server
 
-# Estágio 2: Imagem final de produção
+# **CORREÇÃO 3: Remove as dependências de desenvolvimento**
+# Após a compilação, não precisamos mais do TypeScript e outros pacotes de dev.
+# Isso reduz o tamanho da camada que será copiada para a imagem final.
+RUN npm prune --production
+
+# Estágio 2: Imagem final de produção - Leve e otimizada
 FROM node:20-alpine
 
 WORKDIR /usr/src/app
 
-# Copia as dependências de produção do estágio de build
+# Copia os artefatos do estágio de build
+# Apenas o node_modules de produção e o código compilado (dist) serão copiados.
 COPY --from=builder /usr/src/app/node_modules ./node_modules
-# Copia o código compilado do estágio de build
-COPY --from=builder /usr/src/app/dist-server ./dist-server
-COPY package*.json ./
+COPY --from=builder /usr/src/app/dist ./dist
 
-# Expõe a porta que o backend vai usar dentro do contêiner
+# Expõe a porta que a aplicação vai rodar
 EXPOSE 3001
 
-# Comando para iniciar o servidor em produção
-CMD [ "node", "-r", "dotenv/config", "./dist-server/server.js" ]
+# Comando para iniciar a aplicação a partir do código JavaScript compilado
+CMD [ "node", "dist/server.js" ]
