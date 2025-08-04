@@ -7,20 +7,16 @@ WORKDIR /usr/src/app
 # Copia os arquivos de definição de pacotes
 COPY package*.json ./
 
-# **CORREÇÃO 1: Instala TODAS as dependências, incluindo devDependencies**
-# Isso garante que o TypeScript (tsc) estará disponível.
+# Instala TODAS as dependências, incluindo devDependencies
 RUN npm install
 
 # Copia todo o código-fonte do projeto para o contêiner
 COPY . .
 
-# **CORREÇÃO 2: Compila o TypeScript para JavaScript**
-# Este passo agora funcionará, pois o tsc foi instalado.
+# Compila o TypeScript para JavaScript
 RUN npm run build:server
 
-# **CORREÇÃO 3: Remove as dependências de desenvolvimento**
-# Após a compilação, não precisamos mais do TypeScript e outros pacotes de dev.
-# Isso reduz o tamanho da camada que será copiada para a imagem final.
+# Remove as dependências de desenvolvimento para otimizar
 RUN npm prune --production
 
 # Estágio 2: Imagem final de produção - Leve e otimizada
@@ -29,7 +25,6 @@ FROM node:20-alpine
 WORKDIR /usr/src/app
 
 # Copia os artefatos do estágio de build
-# Apenas o node_modules de produção e o código compilado (dist) serão copiados.
 COPY --from=builder /usr/src/app/node_modules ./node_modules
 COPY --from=builder /usr/src/app/dist ./dist
 

@@ -1,22 +1,28 @@
 {
   "compilerOptions": {
-    "target": "ES2022",
-    "lib": ["ES2023"],
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
+    "target": "ES2022",
+    "lib": ["esnext"],
+    "outDir": "./dist",
+    "rootDir": ".",
     "esModuleInterop": true,
+    "strict": true,
+    "noEmit": false,
     "allowSyntheticDefaultImports": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
-    "strict": true,
-    "noEmit": false,
-    "outDir": "./dist-server",
-    "isolatedModules": true,
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"]
+      "~/*": ["./src/*"]
     }
   },
-  "include": ["server.ts", "src/shared/services/baserowServerClient.ts"],
-  "exclude": ["node_modules", "dist"]
+  // A MUDANÇA CRÍTICA:
+  // Forçamos o compilador a usar APENAS o server.ts como ponto de partida.
+  // Ele irá seguir as importações a partir daqui, ignorando qualquer outro
+  // arquivo .ts no projeto que não faça parte da dependência do servidor.
+  "files": [
+    "server.ts"
+  ],
+  // 'include' e 'exclude' são removidos para evitar conflitos com 'files'.
 }

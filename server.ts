@@ -6,6 +6,7 @@ dotenv.config();
 import express, { Request, Response } from 'express';
 import cors from 'cors';
 import { google } from 'googleapis';
+// CORREÇÃO: Adicionada a extensão .js para compatibilidade com 'NodeNext'
 import { baserowServer } from './src/shared/services/baserowServerClient.js';
 import fetch from 'node-fetch';
 import bcrypt from 'bcryptjs';
@@ -46,12 +47,12 @@ const WHATSAPP_CANDIDATOS_TABLE_ID = '712';
 const AGENDAMENTOS_TABLE_ID = '713';
 const SALT_ROUNDS = 10;
 
-// --- TIPAGEM (Já presente no seu código) ---
+// --- TIPAGEM ---
+// (Estas interfaces provavelmente deveriam ser movidas para 'src/shared/types.ts' no futuro)
 interface BaserowJobPosting { id: number; titulo: string; usuario?: { id: number; value: string }[]; }
-interface BaserowCandidate { id: number; vaga?: { id: number; value: string }[] | string | null; usuario?: { id: number; value: string }[] | null; nome: string; telefone: string | null; curriculo?: { url: string; name: string }[] | null; score?: number | null; resumo_ia?: string | null; status?: { id: number; value: 'Triagem' | 'Entrevista' | 'Aprovado' | 'Reprovado' } | null; data_triagem?: string; sexo?: string | null; escolaridade?: string | null; idade?: number | null; }
+interface BaserowCandidate { id: number; vaga?: { id: number; value: string }[] | string | null; usuario?: { id: number; value: string }[] | null; nome: string; telefone: string | null; email?: string | null; curriculo?: { url: string; name: string }[] | null; score?: number | null; resumo_ia?: string | null; status?: { id: number; value: 'Triagem' | 'Entrevista' | 'Aprovado' | 'Reprovado' } | null; data_triagem?: string; sexo?: string | null; escolaridade?: string | null; idade?: number | null; }
 
-// --- ROTAS DE AUTENTICAÇÃO E USUÁRIO (Código existente mantido) ---
-// ... (Todo o seu código de /api/auth/signup, /api/auth/login, etc. permanece aqui)
+// --- ROTAS DE AUTENTICAÇÃO E USUÁRIO ---
 app.post('/api/auth/signup', async (req: Request, res: Response) => {
   const { nome, empresa, telefone, email, password } = req.body;
   if (!email || !password || !nome) {
@@ -108,18 +109,10 @@ app.post('/api/auth/login', async (req: Request, res: Response) => {
   }
 });
 
-
 // =================================================================
-// ROTAS DE AUTENTICAÇÃO E API DO GOOGLE (CÓDIGO ANTERIOR + NOVIDADES)
+// ROTAS DE AUTENTICAÇÃO E API DO GOOGLE
 // =================================================================
 
-/**
- * Função auxiliar para obter um cliente de calendário autenticado.
- * Centraliza a lógica de buscar o token e preparar o cliente da API.
- * @param userId O ID do usuário para buscar o refresh_token.
- * @returns O cliente da API do Google Calendar autenticado.
- * @throws Lança um erro se o token não for encontrado.
- */
 const getAuthenticatedCalendarClient = async (userId: string) => {
     const userResponse = await baserowServer.getRow(USERS_TABLE_ID, parseInt(userId));
     const refreshToken = userResponse.google_refresh_token;
@@ -128,7 +121,6 @@ const getAuthenticatedCalendarClient = async (userId: string) => {
         throw new Error('Usuário não conectado ao Google Calendar. Por favor, conecte sua conta nas configurações.');
     }
     
-    // Clona o cliente global para evitar concorrência entre requisições
     const auth = new google.auth.OAuth2(
         process.env.GOOGLE_CLIENT_ID,
         process.env.GOOGLE_CLIENT_SECRET,
@@ -139,8 +131,6 @@ const getAuthenticatedCalendarClient = async (userId: string) => {
     return google.calendar({ version: 'v3', auth });
 };
 
-
-// --- Rotas de Autenticação (sem alterações) ---
 app.get('/api/google/auth/connect', (req: Request, res: Response) => {
   const { userId } = req.query;
   if (!userId || typeof userId !== 'string') {
@@ -148,7 +138,7 @@ app.get('/api/google/auth/connect', (req: Request, res: Response) => {
   }
   const scopes = [
     'https://www.googleapis.com/auth/calendar.events',
-    'https://www.googleapis.com/auth/calendar.readonly' // Adicionado para listar calendários
+    'https://www.googleapis.com/auth/calendar.readonly'
   ];
   const authorizationUrl = oauth2Client.generateAuthUrl({
     access_type: 'offline', prompt: 'consent', state: userId, scope: scopes,
@@ -190,14 +180,6 @@ app.post('/api/google/auth/disconnect', async (req: Request, res: Response) => {
     }
 });
 
-
-// --- ROTAS DA API DO CALENDAR ---
-
-/**
- * @route   GET /api/google/calendar/list-calendars
- * @desc    Busca a lista de calendários do usuário conectado.
- * @access  Private
- */
 app.get('/api/google/calendar/list-calendars', async (req: Request, res: Response) => {
     const { userId } = req.query;
     if (!userId || typeof userId !== 'string') {
@@ -211,13 +193,12 @@ app.get('/api/google/calendar/list-calendars', async (req: Request, res: Respons
             return res.json({ success: true, calendars: [] });
         }
 
-        // Filtra e mapeia os dados para retornar apenas o que é necessário para o frontend.
         const simplifiedCalendars = calendarList.data.items.map(cal => ({
             id: cal.id,
             summary: cal.summary,
             primary: cal.primary || false,
             accessRole: cal.accessRole
-        })).filter(cal => cal.accessRole === 'owner' || cal.accessRole === 'writer'); // Garante que o usuário pode escrever no calendário
+        })).filter(cal => cal.accessRole === 'owner' || cal.accessRole === 'writer');
 
         res.json({ success: true, calendars: simplifiedCalendars });
 
@@ -227,40 +208,45 @@ app.get('/api/google/calendar/list-calendars', async (req: Request, res: Respons
     }
 });
 
-/**
- * @route   POST /api/google/calendar/create-event
- * @desc    Cria um evento na agenda do Google do usuário.
- * @access  Private
- */
 app.post('/api/google/calendar/create-event', async (req: Request, res: Response) => {
-    // Adicionamos calendarId ao corpo da requisição
-    const { userId, eventData, candidate, job, calendarId } = req.body;
+    const { userId, eventData, candidate, job, calendarId } = req.body as {
+        userId: string;
+        eventData: { title: string; start: string; end: string; details?: string };
+        candidate: BaserowCandidate;
+        job: BaserowJobPosting;
+        calendarId: string;
+    };
 
     if (!userId || !eventData || !candidate || !job || !calendarId) {
-        return res.status(400).json({ success: false, message: 'Dados insuficientes para criar o evento (userId, eventData, candidate, job, calendarId são obrigatórios).' });
+        return res.status(400).json({ success: false, message: 'Dados insuficientes para criar o evento.' });
     }
     try {
         const calendar = await getAuthenticatedCalendarClient(userId);
         
         const eventDescription = `Entrevista com o candidato: ${candidate.nome}.\n` +
-                                 `Telefone: ${candidate.telefone || 'Não informado'}\n\n` +
+                                 `Telefone: ${candidate.telefone || 'Não informado'}\n` +
+                                 `Email: ${candidate.email || 'Não informado'}\n\n` +
                                  `--- Detalhes adicionais ---\n` +
                                  `${eventData.details || 'Nenhum detalhe adicional.'}`;
         
+        const attendees = [];
+        if (candidate.email) {
+            attendees.push({ email: candidate.email });
+        }
+
         const event = {
             summary: eventData.title,
             description: eventDescription,
             start: { dateTime: eventData.start, timeZone: 'America/Sao_Paulo' },
             end: { dateTime: eventData.end, timeZone: 'America/Sao_Paulo' },
-            attendees: [{ email: candidate.email }], // Adicionado para convidar o candidato
+            attendees: attendees,
             reminders: { useDefault: true },
         };
 
         const response = await calendar.events.insert({
-            // Usa o calendarId recebido do frontend. 'primary' é o padrão se nenhum for enviado.
             calendarId: calendarId, 
             requestBody: event,
-            sendNotifications: true, // Envia convite por e-mail para os participantes
+            sendNotifications: true,
         });
 
         console.log('Evento criado no Google Calendar com sucesso:', response.data.htmlLink);
