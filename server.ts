@@ -39,6 +39,7 @@ const oauth2Client = new google.auth.OAuth2(
 const USERS_TABLE_ID = '711';
 const VAGAS_TABLE_ID = '709';
 const CANDIDATOS_TABLE_ID = '710';
+const WHATSAPP_CANDIDATOS_TABLE_ID = '712';
 const AGENDAMENTOS_TABLE_ID = '713';
 const SALT_ROUNDS = 10;
 
@@ -67,7 +68,7 @@ app.get('/api/users/:id', async (req: Request, res: Response) => {
             avatar_url: user.avatar_url || null,
             google_refresh_token: user.google_refresh_token || null,
         };
-        res.json({ success: true, user: userProfile });
+        res.json(userProfile); // Retorna o objeto direto, sem { success: true }
     } catch (error: any) {
         res.status(500).json({ error: 'Erro ao buscar dados do usuário.' });
     }
@@ -78,12 +79,11 @@ app.get('/api/data/all/:userId', async (req: Request, res: Response) => {
     if (!userId) return res.status(400).json({ error: 'ID do usuário não fornecido.' });
     try {
         // 1. Busca todas as vagas (jobs) do usuário
-        const { results: jobs } = await baserowServer.get(VAGAS_TABLE_ID, `?user_field_names=true&filter__usuario__contains=${userId}`);
+        const { results: jobs } = await baserowServer.get(VAGAS_TABLE_ID, `?filter__usuario__link_row_has=${userId}`);
 
-        // 2. Busca todos os candidatos de todas as vagas encontradas
-        const { results: candidates } = await baserowServer.get(CANDIDATOS_TABLE_ID, `?user_field_names=true`);
+        // 2. Busca todos os candidatos associados ao usuário
+        const { results: candidates } = await baserowServer.get(CANDIDATOS_TABLE_ID, `?filter__usuario__link_row_has=${userId}`);
         
-        // (Opcional, mas recomendado) Filtra os candidatos no lado do servidor para garantir que pertençam apenas às vagas do usuário
         const jobIds = jobs.map((j: any) => j.id);
         const userCandidates = candidates.filter((c: any) => c.vaga && c.vaga.some((v: any) => jobIds.includes(v.id)));
 
@@ -98,7 +98,6 @@ app.get('/api/data/all/:userId', async (req: Request, res: Response) => {
         res.status(500).json({ error: 'Erro ao buscar os dados da aplicação.' });
     }
 });
-
 
 // =================================================================
 // ROTAS DE AUTENTICAÇÃO
