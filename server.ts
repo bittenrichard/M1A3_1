@@ -39,16 +39,14 @@ const oauth2Client = new google.auth.OAuth2(
 const USERS_TABLE_ID = '711';
 const VAGAS_TABLE_ID = '709';
 const CANDIDATOS_TABLE_ID = '710';
-const WHATSAPP_CANDIDATOS_TABLE_ID = '712';
 const AGENDAMENTOS_TABLE_ID = '713';
 const SALT_ROUNDS = 10;
 
 interface BaserowJobPosting { id: number; titulo: string; usuario?: { id: number; value: string }[]; }
 interface BaserowCandidate { id: number; vaga?: { id: number; value: string }[]; nome: string; telefone: string | null; email?: string | null; }
 
-
 // =================================================================
-// ROTAS DE DADOS E USUÁRIOS (ADICIONADAS DE VOLTA)
+// ROTAS DE DADOS E USUÁRIOS
 // =================================================================
 
 app.get('/api/users/:id', async (req: Request, res: Response) => {
@@ -58,17 +56,12 @@ app.get('/api/users/:id', async (req: Request, res: Response) => {
         const user = await baserowServer.getRow(USERS_TABLE_ID, parseInt(id));
         if (!user) return res.status(404).json({ error: 'Usuário não encontrado.' });
         
-        // Retorna o perfil do usuário sem a senha
         const userProfile = {
-            id: user.id,
-            nome: user.nome,
-            email: user.Email,
-            empresa: user.empresa,
-            telefone: user.telefone,
-            avatar_url: user.avatar_url || null,
+            id: user.id, nome: user.nome, email: user.Email, empresa: user.empresa,
+            telefone: user.telefone, avatar_url: user.avatar_url || null,
             google_refresh_token: user.google_refresh_token || null,
         };
-        res.json(userProfile); // Retorna o objeto direto, sem { success: true }
+        res.json(userProfile);
     } catch (error: any) {
         res.status(500).json({ error: 'Erro ao buscar dados do usuário.' });
     }
@@ -78,21 +71,13 @@ app.get('/api/data/all/:userId', async (req: Request, res: Response) => {
     const { userId } = req.params;
     if (!userId) return res.status(400).json({ error: 'ID do usuário não fornecido.' });
     try {
-        // 1. Busca todas as vagas (jobs) do usuário
         const { results: jobs } = await baserowServer.get(VAGAS_TABLE_ID, `?filter__usuario__link_row_has=${userId}`);
-
-        // 2. Busca todos os candidatos associados ao usuário
         const { results: candidates } = await baserowServer.get(CANDIDATOS_TABLE_ID, `?filter__usuario__link_row_has=${userId}`);
         
         const jobIds = jobs.map((j: any) => j.id);
         const userCandidates = candidates.filter((c: any) => c.vaga && c.vaga.some((v: any) => jobIds.includes(v.id)));
 
-        res.json({
-            success: true,
-            jobs,
-            candidates: userCandidates,
-        });
-
+        res.json({ success: true, jobs, candidates: userCandidates });
     } catch (error: any) {
         console.error(`Erro ao buscar todos os dados para o usuário ${userId}:`, error);
         res.status(500).json({ error: 'Erro ao buscar os dados da aplicação.' });
@@ -132,7 +117,6 @@ app.post('/api/auth/login', async (req: Request, res: Response) => {
     } else { res.status(401).json({ error: 'E-mail ou senha inválidos.' }); }
   } catch (error: any) { res.status(500).json({ error: error.message || 'Erro ao fazer login.' }); }
 });
-
 
 // =================================================================
 // ROTAS DO GOOGLE
@@ -207,7 +191,6 @@ app.post('/api/google/calendar/create-event', async (req: Request, res: Response
         res.json({ success: true, message: 'Evento criado com sucesso!', data: response.data });
     } catch (error: any) { res.status(500).json({ success: false, message: error.message }); }
 });
-
 
 // =================================================================
 // Inicialização do Servidor
