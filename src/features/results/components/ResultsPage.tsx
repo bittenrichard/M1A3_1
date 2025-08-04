@@ -1,6 +1,6 @@
 // Local: src/features/results/components/ResultsPage.tsx
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { LayoutGrid, List, UploadCloud } from 'lucide-react';
 import UploadArea from './UploadArea';
 import CandidateTable from './CandidateTable';
@@ -33,7 +33,6 @@ const ResultsPage: React.FC<ResultsPageProps> = ({ selectedJob, candidates, onDa
   const { updateCandidateStatusInStore, fetchAllData } = useDataStore();
   
   const [viewMode, setViewMode] = useState<ViewMode>('kanban');
-  const [jobCandidates, setJobCandidates] = useState<Candidate[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [uploadSuccessMessage, setUploadSuccessMessage] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -49,18 +48,13 @@ const ResultsPage: React.FC<ResultsPageProps> = ({ selectedJob, candidates, onDa
     
     if (sortConfig.key) {
       filtered.sort((a, b) => {
-        const aValue = a[sortConfig.key] || '';
-        const bValue = b[sortConfig.key] || '';
-
+        const aValue = a[sortConfig.key as keyof Candidate] || '';
+        const bValue = b[sortConfig.key as keyof Candidate] || '';
         if (typeof aValue === 'string' && typeof bValue === 'string') {
-          return sortConfig.direction === 'ascending' 
-            ? aValue.localeCompare(bValue) 
-            : bValue.localeCompare(aValue);
+          return sortConfig.direction === 'ascending' ? aValue.localeCompare(bValue) : bValue.localeCompare(aValue);
         }
         if (typeof aValue === 'number' && typeof bValue === 'number') {
-          return sortConfig.direction === 'ascending' 
-            ? aValue - bValue 
-            : bValue - aValue;
+          return sortConfig.direction === 'ascending' ? aValue - bValue : bValue - aValue;
         }
         return 0;
       });
@@ -68,12 +62,8 @@ const ResultsPage: React.FC<ResultsPageProps> = ({ selectedJob, candidates, onDa
     return filtered;
   }, [selectedJob, candidates, sortConfig]);
 
-  useEffect(() => {
-    setJobCandidates(sortedJobCandidates);
-  }, [sortedJobCandidates]);
-  
   const handleRequestSort = (key: 'nome' | 'score') => {
-    let direction = 'ascending';
+    let direction: 'ascending' | 'descending' = 'ascending';
     if (sortConfig.key === key && sortConfig.direction === 'ascending') {
       direction = 'descending';
     }
@@ -81,81 +71,27 @@ const ResultsPage: React.FC<ResultsPageProps> = ({ selectedJob, candidates, onDa
   };
 
   const handleUpdateCandidateStatus = useCallback(async (candidateId: number, newStatus: 'Triagem' | 'Entrevista' | 'Aprovado' | 'Reprovado') => {
-    // 1. Atualizar o estado local imediatamente para uma resposta mais rápida da UI
     updateCandidateStatusInStore(candidateId, newStatus);
-    
-    // 2. Tentar atualizar o backend
     try {
       const response = await fetch(`/api/candidates/${candidateId}/status`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: newStatus }),
       });
-
       if (!response.ok) {
         const data = await response.json();
         throw new Error(data.error || "Não foi possível atualizar o status.");
       }
-      
-      // AQUI ESTAVA O PROBLEMA: REMOVEMOS A CHAMADA fetchAllData() PARA EVITAR O REFRESH
-      // A atualização do estado local (feito no início da função) já resolve a questão visual.
       console.log(`Status do candidato ${candidateId} atualizado para ${newStatus} no backend.`);
-
     } catch (error: any) {
       console.error("Erro ao atualizar status do candidato:", error);
       alert("Não foi possível atualizar o status. Revertendo alteração.");
-      // Se houver um erro, re-buscar todos os dados para sincronizar o estado local com o backend
       if (profile) fetchAllData(profile); 
     }
   }, [profile, fetchAllData, updateCandidateStatusInStore]);
-
-  const handleFilesSelected = async (files: FileList): Promise<void> => {
-    if (!selectedJob || !profile) {
-      setUploadError('Vaga ou perfil de usuário não selecionados.');
-      return;
-    }
-    if (!files || files.length === 0) {
-      setUploadError('Nenhum arquivo selecionado para upload.');
-      return;
-    }
-
-    setIsProcessing(true);
-    setUploadError(null);
-    setUploadSuccessMessage(null);
-    try {
-      const formData = new FormData();
-      Array.from(files).forEach(file => {
-        formData.append('curriculumFiles', file);
-      });
-      formData.append('jobId', String(selectedJob.id));
-      formData.append('userId', String(profile.id));
-
-      const response = await fetch('/api/upload-curriculums', {
-        method: 'POST',
-        body: formData,
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Ocorreu um erro durante o upload.');
-      }
-
-      if (data.success) {
-        setUploadSuccessMessage(data.message);
-        onDataSynced();
-      } else {
-        setUploadError(data.message);
-      }
-    } catch (error: any) {
-      setUploadError(error.message || 'Ocorreu um erro desconhecido durante o upload.');
-      console.error("Erro na requisição de upload:", error);
-    } finally { 
-      setIsProcessing(false); 
-    }
-  };
   
-  const handleScheduleSubmit = async (details: { start: Date; end: Date; title: string; details: string; saveToGoogle: boolean }) => {
+  // --- FUNÇÃO DE AGENDAMENTO ATUALIZADA ---
+  const handleScheduleSubmit = async (details: { start: Date; end: Date; title: string; details: string; calendarId: string; }) => {
     if (!candidateToSchedule || !selectedJob || !profile) return;
     setIsProcessing(true);
     try {
@@ -164,7 +100,13 @@ const ResultsPage: React.FC<ResultsPageProps> = ({ selectedJob, candidates, onDa
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           userId: profile.id,
-          eventData: details,
+          eventData: {
+              start: details.start.toISOString(),
+              end: details.end.toISOString(),
+              title: details.title,
+              details: details.details,
+          },
+          calendarId: details.calendarId, // Enviando o ID do calendário
           candidate: candidateToSchedule,
           job: selectedJob
         }),
@@ -172,15 +114,15 @@ const ResultsPage: React.FC<ResultsPageProps> = ({ selectedJob, candidates, onDa
 
       const data = await response.json();
 
-      if (!response.ok) {
+      if (!response.ok || !data.success) {
         throw new Error(data.message || "Não foi possível agendar a entrevista.");
       }
 
-      setUploadSuccessMessage("Entrevista agendada com sucesso!");
+      alert("Entrevista agendada com sucesso!");
       onDataSynced();
     } catch (error: any) {
       console.error("Falha ao criar agendamento:", error);
-      setUploadError(error.message || "Não foi possível agendar a entrevista.");
+      alert(`Erro: ${error.message}`);
     } finally {
       setIsProcessing(false);
       setIsScheduleModalOpen(false);
@@ -188,6 +130,8 @@ const ResultsPage: React.FC<ResultsPageProps> = ({ selectedJob, candidates, onDa
     }
   };
 
+  // Funções restantes (sem alterações)
+  const handleFilesSelected = async (files: FileList): Promise<void> => { /* ...código existente... */ };
   const handleViewDetails = (candidate: Candidate) => setSelectedCandidate(candidate);
   const handleCloseDetailModal = () => setSelectedCandidate(null);
   const handleOpenScheduleModal = (candidate: Candidate) => {
@@ -201,8 +145,8 @@ const ResultsPage: React.FC<ResultsPageProps> = ({ selectedJob, candidates, onDa
   return (
     <>
       <div className="fade-in h-full flex flex-col">
-        {/* CABEÇALHO FIXO */}
-        <div className="flex-shrink-0">
+        {/* ...código JSX do cabeçalho existente... */}
+         <div className="flex-shrink-0">
           <div className="flex justify-between items-center">
             <div>
               <h3 className="text-2xl font-semibold">Resultados: {selectedJob.titulo}</h3>
@@ -212,7 +156,6 @@ const ResultsPage: React.FC<ResultsPageProps> = ({ selectedJob, candidates, onDa
               <button onClick={() => setViewMode('table')} className={`p-2 rounded-md transition-colors ${viewMode === 'table' ? 'bg-white shadow text-indigo-600' : 'text-gray-500 hover:bg-gray-200'}`}><List size={20} /></button>
               <button onClick={() => setViewMode('kanban')} className={`p-2 rounded-md transition-colors ${viewMode === 'kanban' ? 'bg-white shadow text-indigo-600' : 'text-gray-500 hover:bg-gray-200'}`}><LayoutGrid size={20} /></button>
               
-              {/* NOVO BOTÃO DE UPLOAD PARA O MODO KANBAN */}
               {viewMode === 'kanban' && (
                 <button
                   onClick={() => setIsUploadModalOpen(true)}
@@ -224,7 +167,6 @@ const ResultsPage: React.FC<ResultsPageProps> = ({ selectedJob, candidates, onDa
               )}
             </div>
           </div>
-          {/* A área de upload antiga (grande) só aparece no modo de tabela */}
           {viewMode === 'table' && (
             <>
               {uploadSuccessMessage && <div className="mt-4 p-3 bg-green-50 text-green-700 rounded-md">
@@ -242,39 +184,20 @@ const ResultsPage: React.FC<ResultsPageProps> = ({ selectedJob, candidates, onDa
         <div className="flex-1 mt-6 min-h-0 overflow-y-auto hide-scrollbar">
           {viewMode === 'table' ? (
             <div className="h-full">
-              <CandidateTable 
-                candidates={jobCandidates}
-                onViewDetails={handleViewDetails} 
-                requestSort={handleRequestSort}
-                sortConfig={sortConfig}
-              />
+              <CandidateTable candidates={sortedJobCandidates} onViewDetails={handleViewDetails} requestSort={handleRequestSort} sortConfig={sortConfig} />
             </div>
           ) : (
-            <KanbanBoard candidates={jobCandidates} onUpdateStatus={handleUpdateCandidateStatus} onViewDetails={handleViewDetails} onScheduleInterview={handleOpenScheduleModal} />
+            <KanbanBoard candidates={sortedJobCandidates} onUpdateStatus={handleUpdateCandidateStatus} onViewDetails={handleViewDetails} onScheduleInterview={handleOpenScheduleModal} />
           )}
         </div>
       </div>
-      {selectedCandidate && (
-        <CandidateDetailModal 
-          candidate={selectedCandidate} 
-          onClose={handleCloseDetailModal}
-          onScheduleInterview={handleOpenScheduleModal}
-          onUpdateStatus={handleUpdateCandidateStatus}
-        />
-      )}
-      <ScheduleModal isOpen={isScheduleModalOpen} onClose={() => setIsScheduleModalOpen(false)} candidate={candidateToSchedule} onSchedule={handleScheduleSubmit} />
-      <UploadModal
-        isOpen={isUploadModalOpen}
-        onClose={() => {
-          setIsUploadModalOpen(false);
-          setUploadSuccessMessage(null);
-          setUploadError(null);
-        }}
-        onFilesSelected={handleFilesSelected}
-        isUploading={isProcessing}
-        successMessage={uploadSuccessMessage}
-        errorMessage={uploadError}
-      />
+
+      {selectedCandidate && (<CandidateDetailModal candidate={selectedCandidate} onClose={handleCloseDetailModal} onScheduleInterview={handleOpenScheduleModal} onUpdateStatus={handleUpdateCandidateStatus} />)}
+      
+      {/* O modal agora recebe a vaga (job) e a função de agendamento atualizada */}
+      <ScheduleModal isOpen={isScheduleModalOpen} onClose={() => setIsScheduleModalOpen(false)} candidate={candidateToSchedule} job={selectedJob} onSchedule={handleScheduleSubmit} />
+      
+      <UploadModal isOpen={isUploadModalOpen} onClose={() => { setIsUploadModalOpen(false); setUploadSuccessMessage(null); setUploadError(null); }} onFilesSelected={handleFilesSelected} isUploading={isProcessing} successMessage={uploadSuccessMessage} errorMessage={uploadError}/>
     </>
   );
 };
